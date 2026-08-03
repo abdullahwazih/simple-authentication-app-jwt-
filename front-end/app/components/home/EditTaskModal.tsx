@@ -1,53 +1,57 @@
 "use client";
 
 import { useState } from "react";
-import { addTask } from "@/lib/taskApi";
+import { updateTask } from "@/lib/taskApi";
 
-export default function AddTaskModal({ onClose }: { onClose: () => void }) {
-    const [title, setTitle] = useState("");
-    const [description, setDescription] = useState("");
-    const [deadline, setDeadline] = useState("");
-    const [loading, setLoading] = useState(false);
+export default function EditTaskModal({
+    task,
+    onClose,
+    onUpdated,
+}: {
+    task: any;
+    onClose: () => void;
+    onUpdated: (updatedTask: any) => void;
+}) {
+    const [title, setTitle] = useState(task.title);
+    const [description, setDescription] = useState(task.description);
+    const [deadline, setDeadline] = useState(task.deadline);
+    const [saving, setSaving] = useState(false);
 
-    const handleAddTask = async () => {
-        if (!title || !description || !deadline) {
-            alert("Please fill in all fields.");
-            return;
-        }
-        try {
-            setLoading(true);
-            const res = await addTask(title, description, deadline);
-            if (res.error) {
-                alert(`Error: ${res.error}`);
-            } else {
-                onClose();
-            }
-        } catch {
-            alert("Something went wrong.");
-        } finally {
-            setLoading(false);
+    const handleSubmit = async () => {
+        setSaving(true);
+        const res = await updateTask(task.id, { title, description, deadline });
+        setSaving(false);
+        if (!res.error) {
+            onUpdated(res.task);
+            onClose();
         }
     };
 
     return (
-        <div style={overlay} onClick={onClose}>
-            <div style={card} onClick={(e) => e.stopPropagation()}>
+        <div
+            style={overlay}
+            onClick={onClose}
+        >
+            <div
+                style={card}
+                onClick={(e) => e.stopPropagation()}
+            >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                    <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>New task</h2>
+                    <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>Edit task</h2>
                     <button onClick={onClose} style={closeBtn}>✕</button>
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     <input
-                        placeholder="Task title"
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
+                        placeholder="Task title"
                         style={inputStyle}
                     />
                     <textarea
-                        placeholder="Description"
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Description"
                         rows={3}
                         style={{ ...inputStyle, resize: "vertical" }}
                     />
@@ -64,8 +68,8 @@ export default function AddTaskModal({ onClose }: { onClose: () => void }) {
 
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
                     <button onClick={onClose} style={btnSecondary}>Cancel</button>
-                    <button onClick={handleAddTask} disabled={loading} style={btnPrimary(loading)}>
-                        {loading ? "Adding…" : "Add task"}
+                    <button onClick={handleSubmit} disabled={saving} style={btnPrimary(saving)}>
+                        {saving ? "Saving…" : "Save changes"}
                     </button>
                 </div>
             </div>
@@ -111,6 +115,7 @@ const closeBtn: React.CSSProperties = {
     cursor: "pointer",
     fontSize: 13,
     color: "var(--text-secondary)",
+    display: "flex", alignItems: "center", justifyContent: "center",
 };
 
 const btnSecondary: React.CSSProperties = {
