@@ -1,38 +1,67 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getTasks, toggleTask, deleteTask } from "@/lib/taskApi";
 import EditTaskModal from "./EditTaskModal";
 import { FiEdit2 } from "react-icons/fi";
 import { RiDeleteBinLine } from "react-icons/ri";
 
+const filterToday = (tasks: any[]) => {
+    const today = new Date();
+    return tasks.filter((t) => {
+        const d = new Date(t.deadline);
+        return (
+            d.getFullYear() === today.getFullYear() &&
+            d.getMonth() === today.getMonth() &&
+            d.getDate() === today.getDate()
+        );
+    });
+};
+
 export default function TodayTasks() {
-    const [tasks, setTasks] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
     const [editingTask, setEditingTask] = useState<any | null>(null);
 
-    const filterToday = (tasks: any[]) => {
-        const today = new Date();
-        return tasks.filter((t) => {
-            const d = new Date(t.deadline);
-            return d.getFullYear() === today.getFullYear() &&
-                d.getMonth() === today.getMonth() &&
-                d.getDate() === today.getDate();
-        });
-    };
+    // ── Fetch tasks ──
+    const { data: tasks = [], isLoading } = useQuery({
+        queryKey: ["tasks", "today"],
+        queryFn: async () => {
+            const res = await getTasks();
+            if (res.error) throw new Error(res.error);
+            return filterToday(res.tasks);
+        },
+        // keep the countdown labels fresh without refetching the network
+        refetchInterval: 1000,
+        refetchIntervalInBackground: false,
+    });
+
+    // ── Toggle mutation ──
+    const toggleMutation = useMutation({
+        mutationFn: (id: string) => toggleTask(id),
+        onSuccess: (res, id) => {
+            if (res.error) return;
+            queryClient.setQueryData(["tasks", "today"], (old: any[] = []) =>
+                old.map((t) => (t.id === id ? res.task : t))
+            );
+        },
+    });
+
+    // ── Delete mutation ──
+    const deleteMutation = useMutation({
+        mutationFn: (id: string) => deleteTask(id),
+        onSuccess: (res, id) => {
+            if (res.error) return;
+            queryClient.setQueryData(["tasks", "today"], (old: any[] = []) =>
+                old.filter((t) => t.id !== id)
+            );
+        },
+    });
 
     const handleTaskUpdated = (updated: any) =>
-        setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-
-    const handleToggle = async (id: string) => {
-        const res = await toggleTask(id);
-        if (!res.error) setTasks((prev) => prev.map((t) => (t.id === id ? res.task : t)));
-    };
-
-    const handleDelete = async (id: string) => {
-        const res = await deleteTask(id);
-        if (!res.error) setTasks((prev) => prev.filter((t) => t.id !== id));
-    };
+        queryClient.setQueryData(["tasks", "today"], (old: any[] = []) =>
+            old.map((t) => (t.id === updated.id ? updated : t))
+        );
 
     const getTimeRemaining = (deadline: string) => {
         const diff = new Date(deadline).getTime() - Date.now();
@@ -51,41 +80,31 @@ export default function TodayTasks() {
         return "var(--success)";
     };
 
-    useEffect(() => {
-        (async () => {
-            setLoading(true);
-            const res = await getTasks();
-            if (!res.error) setTasks(filterToday(res.tasks));
-            setLoading(false);
-        })();
-    }, []);
-
-    useEffect(() => {
-        const iv = setInterval(() => setTasks((t) => [...t]), 1000);
-        return () => clearInterval(iv);
-    }, []);
-
     return (
-        <TaskShell loading={loading} empty={tasks.length === 0} emptyMsg="No tasks due today">
-            {tasks.map((task) => (
+        <TaskShell loading={isLoading} empty={tasks.length === 0} emptyMsg="No tasks due today">
+            {tasks.map((task: any) => (
                 <TaskCard
                     key={task.id}
                     task={task}
-                    onToggle={handleToggle}
+                    onToggle={(id) => toggleMutation.mutate(id)}
                     onEdit={() => setEditingTask(task)}
-                    onDelete={handleDelete}
+                    onDelete={(id) => deleteMutation.mutate(id)}
                     timeLabel={!task.is_completed ? getTimeRemaining(task.deadline) : undefined}
                     timeColor={urgencyColor(task.deadline)}
                 />
             ))}
             {editingTask && (
-                <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onUpdated={handleTaskUpdated} />
+                <EditTaskModal
+                    task={editingTask}
+                    onClose={() => setEditingTask(null)}
+                    onUpdated={handleTaskUpdated}
+                />
             )}
         </TaskShell>
     );
 }
 
-/* ── Shared sub-components (exported for reuse within module) ── */
+/* ── Shared sub-components (unchanged) ── */
 
 export function TaskShell({ loading, empty, emptyMsg, children }: {
     loading: boolean; empty: boolean; emptyMsg: string; children?: React.ReactNode;
@@ -121,7 +140,6 @@ export function TaskCard({ task, onToggle, onEdit, onDelete, timeLabel, timeColo
             gap: 12,
             transition: "box-shadow 0.15s ease",
         }}>
-            {/* Left */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
                 <input
                     type="checkbox"
@@ -145,7 +163,6 @@ export function TaskCard({ task, onToggle, onEdit, onDelete, timeLabel, timeColo
                 </div>
             </div>
 
-            {/* Right */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 {timeLabel && (
                     <span style={{ fontSize: 12, fontWeight: 500, fontFamily: "inherit", color: timeColor ?? "var(--text-secondary)" }}>
